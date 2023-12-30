@@ -1,0 +1,194 @@
+import os
+from flask import redirect, send_from_directory
+from flask import Flask, render_template
+import pandas as pd
+from flask_bootstrap import Bootstrap
+from flask import request
+from jinja2 import Template
+from flask import redirect
+
+app = Flask(__name__)
+
+
+@app.route('/')
+def index():
+    file_path = os.path.join(os.path.abspath(os.path.dirname('data.xlsx')), 'data.xlsx') 
+    data = pd.read_excel(file_path)
+    return render_template("stranica.html", data=data.to_dict('records'))
+
+
+@app.route('/edit_data/<email>', methods=['GET', 'POST'])
+def edit_data(email):
+    file_path = os.path.join(os.path.abspath(os.path.dirname('data.xlsx')), 'data.xlsx')
+    data = pd.read_excel(file_path)
+    # Идентификация индекса строки, которую нужно обновить (на основе уникального идентификатора, например, Email)
+    index_to_update = data.index[data['Email'] == email].tolist()
+    if request.method == 'POST':
+        if len(index_to_update) > 0:
+            index_to_update = index_to_update[0]  # Берем первый индекс, если найдено несколько совпадений
+            data.at[index_to_update, 'Full Name'] = request.form['full_name']
+            data.at[index_to_update, 'Dolzhnost'] = request.form['position']
+            data.at[index_to_update, 'Zarplata'] = request.form['salary']
+            data.at[index_to_update, 'Date of Birth'] = request.form['birth_date']
+            # Запись обновленных данных обратно в файл
+            try:
+                data.to_excel(file_path, index=False)
+                return render_template('update_success.html')
+            except PermissionError:
+                return "Ошибка: Недостаточно прав для записи в файл."
+            except Exception as e:
+                return f"Произошла ошибка при записи файла: {e}"
+        else:
+            return "Ошибка: Строка с указанным Email не найдена."
+    else:
+        if len(index_to_update) > 0:
+            index_to_update = index_to_update[0]  # Берем первый индекс, если найдено несколько совпадений
+            employee_data = data.loc[index_to_update].to_dict()
+            return render_template("edit_data.html", email=email, employee_data=employee_data)
+        else:
+            return "Ошибка: Строка с указанным Email не найдена."
+
+
+@app.route('/add_page')
+def add_page():
+    return render_template('add_page.html')
+
+#ДОБАВЛЕНИЕ НОВЫХ ДАННЫХ
+
+@app.route('/add_data', methods=['GET', 'POST'])
+def add_data_page():
+    if request.method == 'POST':
+        file_path = os.path.join(os.path.abspath(os.path.dirname('data.xlsx')), 'data.xlsx')
+        
+        # Чтение существующих данных из Excel файла
+        try:
+            data = pd.read_excel(file_path)
+        except Exception as e:
+            return f"Произошла ошибка при чтении файла: {e}"
+        
+        # Создание новой строки с новыми данными
+        new_data = {
+            'Full Name': request.form['full_name'],
+            'Email': request.form['email'],
+            'Dolzhnost': request.form['position'],
+            'Zarplata': request.form['salary'],
+            'Date of Birth': request.form['birth_date']
+        }
+        
+        # Добавление новой строки в данные
+        data = pd.concat([data, pd.DataFrame(new_data, index=[0])], ignore_index=True)
+        
+        # Запись обновленных данных обратно в файл
+        try:
+            data.to_excel(file_path, index=False)
+            return render_template('add_success.html')  # Возвращаем новый шаблон
+        except PermissionError:
+            return "Ошибка: Недостаточно прав для записи в файл."
+        except Exception as e:
+            return f"Произошла ошибка при записи файла: {e}"
+    else:
+        return render_template("add_page.html")
+
+# Удаление данных
+@app.route('/delete_data/<email>', methods=['POST'])
+def delete_data(email):
+    file_path = os.path.join(os.path.abspath(os.path.dirname('data.xlsx')), 'data.xlsx')
+    data = pd.read_excel(file_path)
+    # Поиск индекса строки, которую нужно удалить (на основе уникального идентификатора, например, Email)
+    index_to_delete = data.index[data['Email'] == email].tolist()
+    if len(index_to_delete) > 0:
+        index_to_delete = index_to_delete[0]  # Берем первый индекс, если найдено несколько совпадений
+        data = data.drop(index_to_delete)  # Удаление строки из данных
+        # Запись обновленных данных обратно в файл
+        try:
+            data.to_excel(file_path, index=False)
+            return redirect('/')  # Перенаправление на главную страницу после удаления
+        except PermissionError:
+            return "Ошибка: Недостаточно прав для записи в файл."
+        except Exception as e:
+            return f"Произошла ошибка при записи файла: {e}"
+    else:
+        return "Ошибка: Строка с указанным Email не найдена."
+
+
+if __name__ == '__main__':
+    try:
+        app.run(debug=True)
+    except SystemExit:
+        print("системная ошибка")
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Редактирование данных</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style_for_redaction.css') }}">
+    <style>
+        .text-field_floating {
+            position: relative;
+        }
+        .text-field_floating .text-field__input {
+            height: calc(3.5rem + 2px);
+            line-height: 1.25;
+            padding: 1rem 0.75rem;
+        }
+        .text-field_floating .text-field__label {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            padding: 1rem .75rem;
+            pointer-events: none;
+            border: 1px solid transparent;
+            transform-origin: 0 0;
+            transition: opacity .15s ease-in-out, transform .15s ease-in-out;
+        }
+        .text-field_floating .text-field__input::-moz-placeholder {
+            color: transparent;
+        }
+        .text-field_floating .text-field__input::placeholder {
+            color: transparent;
+        }
+        .text-field_floating .text-field__input:focus,
+        .text-field_floating .text-field__input:not(:placeholder-shown) {
+            padding-top: 1.625rem;
+            padding-bottom: .625rem;
+        }
+        .text-field_floating .text-field__input:focus~.text-field__label,
+        .text-field_floating .text-field__input:not(:placeholder-shown)~.text-field__label {
+            opacity: .65;
+            transform: scale(.85) translateY(-.75rem) translateX(.15rem);
+        }
+    </style>
+    
+</head>
+<body>
+    <header>  
+        <h1>Редактирование данных</h1> 
+    </header> 
+    
+    <form method="POST" action="/save_data/{{ email }}">
+        <div class="text-field-container">
+            
+            <div class="text-field text-field_floating">
+              <input class="text-field__input" type="text" name="full_name" id="full_name" placeholder="ФИО" autocomplete="off">
+              <label class="text-field__label" for="full_name">ФИО</label>
+            </div>
+            <div class="text-field text-field_floating">
+              <input class="text-field__input" type="text" name="position" id="position" placeholder="Должность" autocomplete="off">
+              <label class="text-field__label" for="position">Должность</label>
+            </div>
+            <div class="text-field text-field_floating">
+              <input class="text-field__input" type="text" name="salary" id="salary" placeholder="Зарплата" autocomplete="off">
+              <label class="text-field__label" for="salary">Зарплата</label>
+            </div>
+            <div class="text-field text-field_floating">
+              <input class="text-field__input" type="text" name="birth_date" id="birth_date" placeholder="Дата рождения" autocomplete="off">
+              <label class="text-field__label" for="birth_date">Дата рождения</label>
+            </div>
+          </div>
+          
+        <input  class="button_save" type="submit" value="Сохранить изменения">
+    </form>
+</body>
+</html>
